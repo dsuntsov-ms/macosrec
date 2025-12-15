@@ -17,9 +17,6 @@ let package = Package(
       dependencies: [
         .product(name: "ArgumentParser", package: "swift-argument-parser")
       ],
-      path: "Sources",
-      linkerSettings: [
-        .linkedFramework("Speech")
-      ])
+      path: "Sources")
   ]
 )

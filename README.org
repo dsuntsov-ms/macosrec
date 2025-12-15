@@ -2,28 +2,26 @@
 
 * macosrec
 
-Take screenshots or videos of macOS windows from the command line (also includes [[https://en.wikipedia.org/wiki/Optical_character_recognition][OCR]]).
+Take screenshots or videos (MOV format) of macOS windows from the command line.
+
+Videos are streamed directly to disk during recording for minimal memory usage and immediate file availability.
 
 See [[https://xenodium.com/recordscreenshot-windows-the-lazy-way][Recording and screenshotting windows: the lazy way]].
 
-#+HTML: <img src="https://raw.githubusercontent.com/xenodium/macosrec/main/demo/record.gif" width="80%" /> <p><small><em>Note: This gif was captured with macosrec</em></small></p>
+#+HTML: <img src="https://raw.githubusercontent.com/xenodium/macosrec/main/demo/record.gif" width="80%" />
 
 #+begin_src shell
   $ macosrec
-  USAGE: record-command [--version] [--list] [--hidden] [--screenshot <app name or window id>] [--record <app name or window id>] [--ocr] [--clipboard] [--mov] [--gif] [--save] [--abort] [--output <optional output file path>]
+  USAGE: record-command [--version] [--list] [--hidden] [--screenshot <app name or window id>] [--record <app name or window id>] [--save] [--abort] [--output <optional output file path>]
 
   OPTIONS:
     --version               Show version.
     -l, --list              List recordable windows.
     --hidden                Also include hidden windows when listing.
     -x, --screenshot <app name or window id>
-                            Take a screenshot.
+                            Take a screenshot (PNG format).
     -r, --record <app name or window id>
-                            Start recording.
-    -c, --ocr               Select and recognize text in screen region.
-    -b, --clipboard         Save --ocr text to clipboard.
-    -m, --mov               Record as mov.
-    -g, --gif               Record as gif.
+                            Start recording (MOV format, streams directly to disk).
     -s, --save              Save active recording.
     -a, --abort             Abort active recording.
     -o, --output <optional output file path>
@@ -60,7 +58,7 @@ Use =--screenshot= + window number to take a screenshot.
 
 * Videos
 
-Before taking a video, identify the window number using =--list=.
+Before recording a video, identify the window number using =--list=.
 
 #+begin_src sh
   $ macosrec --list
@@ -70,70 +68,38 @@ Before taking a video, identify the window number using =--list=.
   22035 Firefox - Planet Emacslife
 #+end_src
 
-Use =--record= + window number to start recording a video (gif).
+Use =--record= + window number to start recording a video (MOV format). The video file is created immediately and frames are streamed directly to disk.
 
 /Note: you can also use application name and it will use the first window it finds belonging to it./
 
 To end recording, send a SIGINT signal (Ctrl+C from terminal). Alternatively, running =macosrec --save= from another session would also end the recording.
 
 #+begin_src sh
-  ~ $ macosrec --record 21902 --gif
+  ~ $ macosrec --record 21902
+  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  ^C
   Saving...
-  ~/Desktop/2023-04-14-08:21:45-Emacs.gif
+  ~/Desktop/2023-04-14-08:21:45-Emacs.mov
 #+end_src
 
 /Note: you can also use application name and it will use the first window it finds belonging to it./
 
 #+begin_src sh
-  ~ $ macosrec --record emacs --mov
+  ~ $ macosrec --record emacs
+  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  ^C
   Saving...
   ~/Desktop/2023-04-14-08:21:45-Emacs.mov
 #+end_src
 
-** Optimizing gif
-
-The gifs can get pretty large fairly quickly depending on the lenght of the recording. Consider using something like [[https://www.lcdf.org/gifsicle/][gifsicle]] to reduce size. For example:
+You can also specify a custom output path:
 
 #+begin_src sh
-  gifsicle -O3 large.gif --lossy=80 -o smaller.gif
-#+end_src
-
-* OCR
-** Selecting a region
-The =--ocr= flag defaults to selecting a screen region (unless =--input=) is given.
-#+begin_src sh
-  $ macosrec --ocr
-
-  Hello this text was recognized
-#+end_src
-
-** From existing image
-
-Use the =--input= flag:
-
-#+begin_src sh
-  $ macosrec --ocr --input /path/to/image.png
-
-  Hello this text was recognized
-#+end_src
-
-** Save to clipboard
-
-Use the =--clipboard= flat:
-
-#+begin_src sh
-  $ macosrec --ocr --input /path/to/image.png --clipboard
-
-  Hello this text was recognized
-#+end_src
-
-* Speech to text
-Recognizing text with in speech =--speech-to-text= is only supported via =--input= audio file (i.e. .mp3).
-
-#+begin_src sh
-  $ macosrec --speech-to-text --locale "en-GB" --input path/to/audio.mp3
-
-  Hello this text was recognized
+  ~ $ macosrec --record emacs --output ~/Videos/my-recording.mov
+  Recording to: ~/Videos/my-recording.mov
+  ^C
+  Saving...
+  ~/Videos/my-recording.mov
 #+end_src
 
 * Disclaimer

@@ -21,10 +21,8 @@ import AVFoundation
 import AppKit
 import ArgumentParser
 import Cocoa
-import Speech
-import Vision
 
-let packageVersion = "0.8.1"
+let packageVersion = "0.9.0"
 
 var recorder: WindowRecorder?
 
@@ -56,42 +54,9 @@ struct RecordCommand: ParsableCommand {
   @Option(
     name: .shortAndLong,
     help: ArgumentHelp(
-      "Start recording.", valueName: "app name or window id")
+      "Start recording (mov format).", valueName: "app name or window id")
   )
   var record: String?
-
-  @Option(
-    name: .shortAndLong,
-    help: ArgumentHelp(
-      "Input file (for --ocr or --speech-to-text only).",
-      valueName: "input image or audio file")
-  )
-  var input: String?
-
-  @Option(
-    name: [.customShort("t"), .long],
-    help: ArgumentHelp(
-      "Locale, for example \"ja-JP\" (for --speech-to-text only).",
-      valueName: "locale for speech to text")
-  )
-  var locale: String?
-
-  @Flag(name: [.customShort("c"), .long], help: "Select and recognize text in screen region.")
-  var ocr: Bool = false
-
-  @Flag(
-    name: [.customShort("z"), .customLong("speech-to-text")],
-    help: "Recognize text in speech audio.")
-  var speechToText: Bool = false
-
-  @Flag(name: [.customShort("b"), .long], help: "Save --ocr text to clipboard.")
-  var clipboard: Bool = false
-
-  @Flag(name: .shortAndLong, help: "Record as mov.")
-  var mov: Bool = false
-
-  @Flag(name: .shortAndLong, help: "Record as gif.")
-  var gif: Bool = false
 
   @Flag(name: .shortAndLong, help: "Save active recording.")
   var save: Bool = false
@@ -124,122 +89,16 @@ struct RecordCommand: ParsableCommand {
       Darwin.exit(1)
     }
 
-    if speechToText {
-      if ocr {
-        print("Error: can't use --ocr and --speech-to-text simultaneously")
-        Darwin.exit(1)
-      }
-
-      if screenshot != nil {
-        print("Error: can't use --ocr and --screenshot simultaneously")
-        Darwin.exit(1)
-      }
-
-      if record != nil {
-        print("Error: can't use --ocr and --record simultaneously")
-        Darwin.exit(1)
-      }
-
-      if mov || gif {
-        print("Error: can't use --ocr with --mov or --gif")
-        Darwin.exit(1)
-      }
-
-      if let output = output,
-        URL(fileURLWithPath: output).pathExtension != "txt"
-      {
-        print("Error: --output file must end in .txt")
-        Darwin.exit(1)
-      }
-
-      guard let input = input else {
-        print("Error: Missing --input file")
-        Darwin.exit(0)
-      }
-
-      guard let locale = locale else {
-        print("Error: Missing --locale")
-        Darwin.exit(0)
-      }
-
-      let url = URL(filePath: input)
-      Recognizer.recognizeAudioText(in: url, locale: locale, saveToFile: output)
-      return
-    }
-
-    if ocr {
-      if screenshot != nil {
-        print("Error: can't use --ocr and --screenshot simultaneously")
-        Darwin.exit(1)
-      }
-
-      if speechToText {
-        print("Error: can't use --ocr and --speech-to-text simultaneously")
-        Darwin.exit(1)
-      }
-
-      if locale != nil {
-        print("Error: can't use --ocr and --locale simultaneously")
-        Darwin.exit(1)
-      }
-
-      if record != nil {
-        print("Error: can't use --ocr and --record simultaneously")
-        Darwin.exit(1)
-      }
-
-      if mov || gif {
-        print("Error: can't use --ocr with --mov or --gif")
-        Darwin.exit(1)
-      }
-
-      if let output = output,
-        URL(fileURLWithPath: output).pathExtension != "txt"
-      {
-        print("Error: --output file must end in .txt")
-        Darwin.exit(1)
-      }
-
-      if let input = input,
-        let capturedImage = NSImage(contentsOfFile: input)
-      {
-        recognizeImageText(in: capturedImage, useClipboard: clipboard, saveToFile: output)
-        Darwin.exit(0)
-      }
-
-      if let capturedImage = captureScreenImage() {
-        recognizeImageText(in: capturedImage, useClipboard: clipboard, saveToFile: output)
-        Darwin.exit(0)
-      }
-
-      Darwin.exit(0)
-    }
-
     if let windowIdentifier = screenshot {
       if record != nil {
         print("Error: can't use --screenshot and --record simultaneously")
         Darwin.exit(1)
       }
 
-      if locale != nil {
-        print("Error: can't use --screenshot and --locale simultaneously")
-        Darwin.exit(1)
-      }
-
-      if input != nil {
-        print("Error: can't use --screenshot with --input")
-        Darwin.exit(1)
-      }
-
-      if mov || gif {
-        print("Error: can't use --screenshot with --mov or --gif")
-        Darwin.exit(1)
-      }
-
       if let output = output,
         URL(fileURLWithPath: output).pathExtension != "png"
       {
-        print("Error: --png not compatible with \(output)")
+        print("Error: --output must be a .png file for screenshots")
         Darwin.exit(1)
       }
 
@@ -259,66 +118,23 @@ struct RecordCommand: ParsableCommand {
         Darwin.exit(1)
       }
 
-      let mediaType: WindowRecorder.MediaType = {
-        if screenshot != nil {
-          print("Error: can't use --screenshot and --record simultaneously")
-          Darwin.exit(1)
-        }
-
-        if locale != nil {
-          print("Error: can't use --locale and --record simultaneously")
-          Darwin.exit(1)
-        }
-
-        if input != nil {
-          print("Error: can't use --record with --input")
-          Darwin.exit(1)
-        }
-
-        if mov {
-          if let output = output,
-            URL(fileURLWithPath: output).pathExtension != "mov"
-          {
-            print("Error: --mov not compatible with \(output)")
-            Darwin.exit(1)
-          }
-          return WindowRecorder.MediaType.mov
-        }
-
-        if gif {
-          if let output = output,
-            URL(fileURLWithPath: output).pathExtension != "gif"
-          {
-            print("Error: --gif not compatible with \(output)")
-            Darwin.exit(1)
-          }
-          return WindowRecorder.MediaType.gif
-        }
-
-        guard let output = output else {
-          // Default to mov otherwise
-          return WindowRecorder.MediaType.mov
-        }
-
-        let ext = URL(fileURLWithPath: output).pathExtension
-
-        if ext == "mov" {
-          return WindowRecorder.MediaType.mov
-        }
-
-        if ext == "gif" {
-          return WindowRecorder.MediaType.gif
-        }
-
-        print("Error: Unsupported extension .\(ext)")
+      if screenshot != nil {
+        print("Error: can't use --screenshot and --record simultaneously")
         Darwin.exit(1)
-      }()
+      }
+
+      if let output = output,
+        URL(fileURLWithPath: output).pathExtension != "mov"
+      {
+        print("Error: --output must be a .mov file for recordings")
+        Darwin.exit(1)
+      }
 
       let identifier = resolveWindowID(windowIdentifier)
       if let output = output {
-        recorder = WindowRecorder(mediaType, for: identifier, URL(fileURLWithPath: output))
+        recorder = WindowRecorder(.mov, for: identifier, URL(fileURLWithPath: output))
       } else {
-        recorder = WindowRecorder(mediaType, for: identifier)
+        recorder = WindowRecorder(.mov, for: identifier)
       }
       recorder?.record()
       return
@@ -408,12 +224,19 @@ class WindowRecorder {
   private let window: WindowInfo
   private let fps: Int32 = 10
   private var timer: Timer?
-  private var images = [CGImage]()
   private let urlOverride: URL?
   private let mediaType: MediaType
+  
+  // For streaming MOV files
+  private var assetWriter: AVAssetWriter?
+  private var assetWriterInput: AVAssetWriterInput?
+  private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  private var frameNumber: Int64 = 0
+  private var videoWidth: Int = 0
+  private var videoHeight: Int = 0
+  private let processingQueue = DispatchQueue(label: "com.macosrec.processing", qos: .userInitiated)
 
   enum MediaType {
-    case gif
     case mov
     case png
   }
@@ -433,6 +256,64 @@ class WindowRecorder {
   }
 
   func record() {
+    // Get initial window dimensions
+    guard let firstImage = windowImage() else {
+      print("Error: Could not capture initial window frame")
+      exit(1)
+    }
+    
+    guard let resizedImage = firstImage.resize(compressionFactor: 1.0, scale: 0.7) else {
+      print("Error: Could not resize initial frame")
+      exit(1)
+    }
+    
+    videoWidth = resizedImage.width
+    videoHeight = resizedImage.height
+    
+    // Initialize the MOV writer immediately
+    guard let outputURL = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".mov") else {
+      print("Error: Could not create output URL")
+      exit(1)
+    }
+    
+    // Create the file immediately so third-party tools can detect it
+    do {
+      assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
+    } catch {
+      print("Error: Could not create asset writer: \(error.localizedDescription)")
+      exit(1)
+    }
+    
+    let videoSettings: [String: AnyObject] = [
+      AVVideoCodecKey: AVVideoCodecType.h264 as AnyObject,
+      AVVideoWidthKey: videoWidth as AnyObject,
+      AVVideoHeightKey: videoHeight as AnyObject,
+    ]
+    
+    assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+    assetWriterInput?.expectsMediaDataInRealTime = true
+    
+    pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+      assetWriterInput: assetWriterInput!,
+      sourcePixelBufferAttributes: [
+        kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32ARGB),
+        kCVPixelBufferWidthKey as String: videoWidth,
+        kCVPixelBufferHeightKey as String: videoHeight,
+      ]
+    )
+    
+    assetWriter?.add(assetWriterInput!)
+    
+    if assetWriter?.startWriting() != true {
+      print("Error: Could not start writing: \(assetWriter?.error?.localizedDescription ?? "Unknown")")
+      exit(1)
+    }
+    
+    assetWriter?.startSession(atSourceTime: .zero)
+    
+    print("Recording to: \((outputURL.path as NSString).abbreviatingWithTildeInPath)")
+    
+    // Start the timer to capture frames
     timer?.invalidate()
     timer = Timer.scheduledTimer(
       withTimeInterval: TimeInterval(interval), repeats: true,
@@ -441,37 +322,62 @@ class WindowRecorder {
           print("Error: No recorder")
           exit(1)
         }
-        guard
-          let image = self.windowImage()
-        else {
-          print("Error: No image from window")
-          exit(1)
-        }
-        DispatchQueue.global(qos: .default).sync { [weak self] in
-          guard let self = self else {
-            print("Error: No recorder")
-            exit(1)
-          }
-
-          guard let resizedImage = image.resize(compressionFactor: 1.0, scale: 0.7) else {
-            print("Error: Could not resize frame")
-            exit(1)
-          }
-          self.images.append(resizedImage)
-          // self.images.append(image)
-        }
+        self.captureAndWriteFrame()
       })
+  }
+  
+  private func captureAndWriteFrame() {
+    guard let image = windowImage() else {
+      print("Error: No image from window")
+      exit(1)
+    }
+    
+    processingQueue.async { [weak self] in
+      guard let self = self else { return }
+      
+      guard let resizedImage = image.resize(compressionFactor: 1.0, scale: 0.7) else {
+        print("Error: Could not resize frame")
+        exit(1)
+      }
+      
+      // Check if dimensions match (window might have been resized)
+      if resizedImage.width != self.videoWidth || resizedImage.height != self.videoHeight {
+        print("Warning: Window dimensions changed, skipping frame")
+        return
+      }
+      
+      guard let assetWriterInput = self.assetWriterInput,
+            let pixelBufferAdaptor = self.pixelBufferAdaptor else {
+        return
+      }
+      
+      // Wait until the writer is ready
+      while !assetWriterInput.isReadyForMoreMediaData {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      
+      let presentationTime = CMTime(value: self.frameNumber, timescale: self.fps)
+      
+      if let pixelBuffer = createPixelBufferFromCGImage(
+        cgImage: resizedImage, width: self.videoWidth, height: self.videoHeight)
+      {
+        pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: presentationTime)
+        self.frameNumber += 1
+      }
+    }
   }
 
   func abort() {
     print("Aborted")
     timer?.invalidate()
+    
+    if let assetWriter = assetWriter {
+      assetWriter.cancelWriting()
+    }
   }
 
   func save() {
     switch mediaType {
-    case .gif:
-      saveGif()
     case .mov:
       saveMov()
     case .png:
@@ -486,7 +392,7 @@ class WindowRecorder {
         exit(1)
       }
       guard let url = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".png") else {
-        print("Error: could craft URL to screenshot")
+        print("Error: could not create URL for screenshot")
         exit(1)
       }
       guard let data = image.pngData(compressionFactor: 1) else {
@@ -509,75 +415,30 @@ class WindowRecorder {
   }
 
   private func saveMov() {
-    print("Saving mov...")
+    print("Saving...")
     timer?.invalidate()
-
-    guard let url = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".mov") else {
-      print("Error: could craft URL to animation")
+    
+    // Wait for any pending frames to be written
+    processingQueue.sync { }
+    
+    guard let assetWriterInput = assetWriterInput,
+          let assetWriter = assetWriter else {
+      print("Error: No asset writer")
       exit(1)
     }
-
-    createVideoFromImages(self.images, url, fps) { success, error in
-      if success {
-        print("\((url.path as NSString).abbreviatingWithTildeInPath)")
+    
+    assetWriterInput.markAsFinished()
+    
+    let outputURL = assetWriter.outputURL
+    
+    assetWriter.finishWriting {
+      if assetWriter.status == .completed {
+        print("\((outputURL.path as NSString).abbreviatingWithTildeInPath)")
         exit(0)
       } else {
-        print("Error: \(error?.localizedDescription ?? "Unknown")")
+        print("Error: \(assetWriter.error?.localizedDescription ?? "Unknown error")")
         exit(1)
       }
-    }
-  }
-
-  private func saveGif() {
-    print("Saving gif...")
-    timer?.invalidate()
-
-    guard let url = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".gif") else {
-      print("Error: could craft URL to animation")
-      exit(1)
-    }
-
-    guard
-      let destinationGIF = CGImageDestinationCreateWithURL(
-        url as NSURL,
-        kUTTypeGIF, images.count, nil)
-    else {
-      print("Error: No destination GIF")
-      exit(1)
-    }
-
-    CGImageDestinationSetProperties(
-      destinationGIF,
-      [
-        kCGImagePropertyGIFDictionary as String:
-          [
-            kCGImagePropertyGIFLoopCount as String: 0
-              // kCGImagePropertyGIFHasGlobalColorMap as String: false,
-              // kCGImagePropertyColorModel as String: kCGImagePropertyColorModelRGB,
-          ] as [String: Any]
-      ] as CFDictionary
-    )
-    images.reverse()
-
-    while !images.isEmpty {
-      guard let image = self.images.popLast() else {
-        print("Error: invalid frame count")
-        exit(1)
-      }
-      CGImageDestinationAddImage(
-        destinationGIF, image,
-        [
-          kCGImagePropertyGIFDictionary as String:
-            [(kCGImagePropertyGIFDelayTime as String): 1.0 / Double(fps)]
-        ] as CFDictionary)
-    }
-
-    if CGImageDestinationFinalize(destinationGIF) {
-      print("\((url.path as NSString).abbreviatingWithTildeInPath)")
-      exit(0)
-    } else {
-      print("Error: could not save")
-      exit(1)
     }
   }
 }
@@ -669,83 +530,6 @@ func resolveWindowID(_ windowIdentifier: String) -> CGWindowID {
   Darwin.exit(1)
 }
 
-func createVideoFromImages(
-  _ images: [CGImage], _ outputFileURL: URL, _ fps: Int32,
-  completion: @escaping (Bool, Error?) -> Void
-) {
-  var images = Array(images.reversed())
-  let assetWriter: AVAssetWriter
-  do {
-    assetWriter = try AVAssetWriter(outputURL: outputFileURL, fileType: AVFileType.mov)
-  } catch {
-    completion(false, error)
-    return
-  }
-
-  guard let firstFrame = images.first else {
-    print("Error: No frames found")
-    Darwin.exit(1)
-  }
-
-  let videoWidth = firstFrame.width
-  let videoHeight = firstFrame.height
-
-  let videoSettings: [String: AnyObject] = [
-    AVVideoCodecKey: AVVideoCodecType.h264 as AnyObject,
-    AVVideoWidthKey: videoWidth as AnyObject,
-    AVVideoHeightKey: videoHeight as AnyObject,
-  ]
-
-  let assetWriterInput = AVAssetWriterInput(
-    mediaType: AVMediaType.video, outputSettings: videoSettings)
-  assetWriterInput.expectsMediaDataInRealTime = true
-
-  let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-    assetWriterInput: assetWriterInput,
-    sourcePixelBufferAttributes: [
-      kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32ARGB),
-      kCVPixelBufferWidthKey as String: videoWidth,
-      kCVPixelBufferHeightKey as String: videoHeight,
-    ]
-  )
-
-  assetWriter.add(assetWriterInput)
-
-  if !assetWriter.startWriting() {
-    completion(false, assetWriter.error)
-    return
-  }
-
-  assetWriter.startSession(atSourceTime: CMTime.zero)
-
-  var frameNumber = 0
-
-  assetWriterInput.requestMediaDataWhenReady(on: .main) {
-
-    if images.isEmpty {
-      assetWriterInput.markAsFinished()
-      assetWriter.finishWriting {
-        completion(true, nil)
-      }
-      return
-    }
-
-    guard let cgImage = images.popLast() else {
-      print("Error: invalid frame count")
-      exit(1)
-    }
-
-    let presentationTime = CMTime(value: Int64(frameNumber), timescale: fps)
-
-    if let pixelBuffer = createPixelBufferFromCGImage(
-      cgImage: cgImage, width: videoWidth, height: videoHeight)
-    {
-      pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: presentationTime)
-    }
-
-    frameNumber += 1
-  }
-}
 
 func createPixelBufferFromCGImage(cgImage: CGImage, width: Int, height: Int) -> CVPixelBuffer? {
   var pixelBuffer: CVPixelBuffer?
@@ -779,123 +563,3 @@ func createPixelBufferFromCGImage(cgImage: CGImage, width: Int, height: Int) -> 
   return pixelBuffer
 }
 
-private func captureScreenImage() -> NSImage? {
-  let process = Process()
-  let screenCaptureURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-  process.executableURL = screenCaptureURL
-  guard
-    let outputFilePath =
-      NSURL.fileURL(withPathComponents: [NSTemporaryDirectory(), "screen.png"])?.path
-  else {
-    return nil
-  }
-  process.arguments = ["-i", outputFilePath]
-  do {
-    try process.run()
-  } catch {
-    print(String(describing: error))
-    Darwin.exit(1)
-  }
-  process.waitUntilExit()
-  return NSImage(contentsOfFile: outputFilePath)
-}
-
-struct Recognizer {
-  static func recognizeAudioText(in url: URL, locale: String, saveToFile outputPath: String?) {
-    SFSpeechRecognizer.requestAuthorization { authStatus in
-      switch authStatus {
-      case .authorized:
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale)) else {
-          print("Error: invalid locale \"\(locale)\"")
-          Darwin.exit(1)
-        }
-        let request = SFSpeechURLRecognitionRequest(url: url)
-        recognizer.recognitionTask(with: request) { result, error in
-          guard let result = result else {
-            print("Recognition failed: \(error?.localizedDescription ?? "Unknown error")")
-            Darwin.exit(1)
-          }
-
-          if result.isFinal {
-            if let outputPath = outputPath {
-              let outputURL = URL(fileURLWithPath: outputPath)
-              do {
-                try result.bestTranscription.formattedString.write(
-                  to: outputURL, atomically: true, encoding: .utf8)
-                Darwin.exit(0)
-              } catch {
-                print(String(describing: error))
-                Darwin.exit(1)
-              }
-            } else {
-              print(result.bestTranscription.formattedString)
-              Darwin.exit(0)
-            }
-          }
-        }
-      case .denied:
-        print("Speech recognition authorization denied.")
-        Darwin.exit(1)
-      case .restricted:
-        print("Speech recognition authorization restricted.")
-        Darwin.exit(1)
-      case .notDetermined:
-        print("Speech recognition authorization not determined.")
-        Darwin.exit(1)
-      @unknown default:
-        Darwin.exit(1)
-      }
-    }
-  }
-}
-
-func recognizeImageText(in image: NSImage, useClipboard: Bool, saveToFile outputPath: String?) {
-  guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-  else {
-    print("Error: Failed to load image.")
-    Darwin.exit(1)
-  }
-  let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-
-  let textRecognitionRequest = VNRecognizeTextRequest { (request, error) in
-    guard error == nil else {
-      print(String(describing: error))
-      Darwin.exit(1)
-    }
-
-    var recognizedText = ""
-    if let observations = request.results as? [VNRecognizedTextObservation] {
-      for observation in observations {
-        if let topCandidate = observation.topCandidates(1).first {
-          recognizedText += topCandidate.string + "\n"
-        }
-      }
-      recognizedText = recognizedText.trimmingCharacters(in: .whitespaces)
-      if useClipboard {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(recognizedText, forType: .string)
-      }
-      if let outputPath = outputPath {
-        let outputURL = URL(fileURLWithPath: outputPath)
-        do {
-          try recognizedText.write(to: outputURL, atomically: true, encoding: .utf8)
-        } catch {
-          print(String(describing: error))
-          Darwin.exit(1)
-        }
-      } else {
-        print(recognizedText)
-      }
-    }
-  }
-
-  textRecognitionRequest.automaticallyDetectsLanguage = true
-
-  do {
-    try requestHandler.perform([textRecognitionRequest])
-  } catch {
-    print(String(describing: error))
-    Darwin.exit(1)
-  }
-}
