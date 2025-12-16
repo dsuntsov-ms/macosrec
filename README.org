@@ -2,7 +2,7 @@
 
 * macosrec
 
-Take screenshots or videos (MOV format) of macOS windows from the command line.
+Take screenshots or videos (MP4 format) of macOS windows from the command line.
 
 Videos are streamed directly to disk during recording for minimal memory usage and immediate file availability.
 
@@ -21,7 +21,7 @@ See [[https://xenodium.com/recordscreenshot-windows-the-lazy-way][Recording and 
     -x, --screenshot <app name or window id>
                             Take a screenshot (PNG format).
     -r, --record <app name or window id>
-                            Start recording (MOV format, streams directly to disk).
+                            Start recording (MP4 format, streams directly to disk).
     -s, --save              Save active recording.
     -a, --abort             Abort active recording.
     -o, --output <optional output file path>
@@ -68,7 +68,7 @@ Before recording a video, identify the window number using =--list=.
   22035 Firefox - Planet Emacslife
 #+end_src
 
-Use =--record= + window number to start recording a video (MOV format). The video file is created immediately and frames are streamed directly to disk.
+Use =--record= + window number to start recording a video (MP4 format). The video file is created immediately and frames are streamed directly to disk.
 
 /Note: you can also use application name and it will use the first window it finds belonging to it./
 
@@ -76,30 +76,30 @@ To end recording, send a SIGINT signal (Ctrl+C from terminal). Alternatively, ru
 
 #+begin_src sh
   ~ $ macosrec --record 21902
-  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mp4
   ^C
   Saving...
-  ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  ~/Desktop/2023-04-14-08:21:45-Emacs.mp4
 #+end_src
 
 /Note: you can also use application name and it will use the first window it finds belonging to it./
 
 #+begin_src sh
   ~ $ macosrec --record emacs
-  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  Recording to: ~/Desktop/2023-04-14-08:21:45-Emacs.mp4
   ^C
   Saving...
-  ~/Desktop/2023-04-14-08:21:45-Emacs.mov
+  ~/Desktop/2023-04-14-08:21:45-Emacs.mp4
 #+end_src
 
 You can also specify a custom output path:
 
 #+begin_src sh
-  ~ $ macosrec --record emacs --output ~/Videos/my-recording.mov
-  Recording to: ~/Videos/my-recording.mov
+  ~ $ macosrec --record emacs --output ~/Videos/my-recording.mp4
+  Recording to: ~/Videos/my-recording.mp4
   ^C
   Saving...
-  ~/Videos/my-recording.mov
+  ~/Videos/my-recording.mp4
 #+end_src
 
 * Disclaimer

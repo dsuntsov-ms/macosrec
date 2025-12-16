@@ -54,7 +54,7 @@ struct RecordCommand: ParsableCommand {
   @Option(
     name: .shortAndLong,
     help: ArgumentHelp(
-      "Start recording (mov format).", valueName: "app name or window id")
+      "Start recording (mp4 format).", valueName: "app name or window id")
   )
   var record: String?
 
@@ -124,9 +124,9 @@ struct RecordCommand: ParsableCommand {
       }
 
       if let output = output,
-        URL(fileURLWithPath: output).pathExtension != "mov"
+        URL(fileURLWithPath: output).pathExtension != "mp4"
       {
-        print("Error: --output must be a .mov file for recordings")
+        print("Error: --output must be a .mp4 file for recordings")
         Darwin.exit(1)
       }
 
@@ -227,7 +227,7 @@ class WindowRecorder {
   private let urlOverride: URL?
   private let mediaType: MediaType
   
-  // For streaming MOV files
+  // For streaming video files
   private var assetWriter: AVAssetWriter?
   private var assetWriterInput: AVAssetWriterInput?
   private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
@@ -270,15 +270,15 @@ class WindowRecorder {
     videoWidth = resizedImage.width
     videoHeight = resizedImage.height
     
-    // Initialize the MOV writer immediately
-    guard let outputURL = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".mov") else {
+    // Initialize the MP4 writer immediately
+    guard let outputURL = urlOverride ?? getDesktopFileURL(suffix: window.app, ext: ".mp4") else {
       print("Error: Could not create output URL")
       exit(1)
     }
     
     // Create the file immediately so third-party tools can detect it
     do {
-      assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
+      assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
     } catch {
       print("Error: Could not create asset writer: \(error.localizedDescription)")
       exit(1)
