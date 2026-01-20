@@ -22,7 +22,7 @@ import AppKit
 import ArgumentParser
 import Cocoa
 
-let packageVersion = "0.9.0"
+let packageVersion = "0.10.0"
 
 var recorder: WindowRecorder?
 
@@ -222,7 +222,7 @@ extension NSWorkspace {
 
 class WindowRecorder {
   private let window: WindowInfo
-  private let fps: Int32 = 10
+  private let fps: Int32 = 60
   private var timer: Timer?
   private let urlOverride: URL?
   private let mediaType: MediaType
@@ -234,6 +234,7 @@ class WindowRecorder {
   private var frameNumber: Int64 = 0
   private var videoWidth: Int = 0
   private var videoHeight: Int = 0
+  private var startTime: Date?
   private let processingQueue = DispatchQueue(label: "com.macosrec.processing", qos: .userInitiated)
 
   enum MediaType {
@@ -262,7 +263,7 @@ class WindowRecorder {
       exit(1)
     }
     
-    guard let resizedImage = firstImage.resize(compressionFactor: 1.0, scale: 0.7) else {
+    guard let resizedImage = firstImage.resizeTo720pHeight() else {
       print("Error: Could not resize initial frame")
       exit(1)
     }
@@ -311,6 +312,9 @@ class WindowRecorder {
     
     assetWriter?.startSession(atSourceTime: .zero)
     
+    // Record the actual start time for accurate timestamps
+    startTime = Date()
+    
     print("Recording to: \((outputURL.path as NSString).abbreviatingWithTildeInPath)")
     
     // Start the timer to capture frames
@@ -332,10 +336,13 @@ class WindowRecorder {
       exit(1)
     }
     
+    // Capture the actual time when this frame was taken
+    let captureTime = Date()
+    
     processingQueue.async { [weak self] in
       guard let self = self else { return }
       
-      guard let resizedImage = image.resize(compressionFactor: 1.0, scale: 0.7) else {
+      guard let resizedImage = image.resizeTo720pHeight() else {
         print("Error: Could not resize frame")
         exit(1)
       }
@@ -347,16 +354,19 @@ class WindowRecorder {
       }
       
       guard let assetWriterInput = self.assetWriterInput,
-            let pixelBufferAdaptor = self.pixelBufferAdaptor else {
+            let pixelBufferAdaptor = self.pixelBufferAdaptor,
+            let startTime = self.startTime else {
         return
       }
       
-      // Wait until the writer is ready
-      while !assetWriterInput.isReadyForMoreMediaData {
-        Thread.sleep(forTimeInterval: 0.01)
+      // Skip frame if writer is not ready (avoid blocking/busy-waiting)
+      guard assetWriterInput.isReadyForMoreMediaData else {
+        return
       }
       
-      let presentationTime = CMTime(value: self.frameNumber, timescale: self.fps)
+      // Use actual elapsed time since recording started for accurate playback speed
+      let elapsedTime = captureTime.timeIntervalSince(startTime)
+      let presentationTime = CMTime(seconds: elapsedTime, preferredTimescale: 600)
       
       if let pixelBuffer = createPixelBufferFromCGImage(
         cgImage: resizedImage, width: self.videoWidth, height: self.videoHeight)
@@ -418,8 +428,18 @@ class WindowRecorder {
     print("Saving...")
     timer?.invalidate()
     
-    // Wait for any pending frames to be written
-    processingQueue.sync { }
+    // Wait for pending frames with 1-second timeout to avoid long delays
+    let group = DispatchGroup()
+    group.enter()
+    processingQueue.async {
+      group.leave()
+    }
+    
+    // Wait max 1 second for pending frames, then proceed
+    let timeout = DispatchTime.now() + .seconds(1)
+    if group.wait(timeout: timeout) == .timedOut {
+      print("Note: Saving with pending frames dropped after 1s timeout")
+    }
     
     guard let assetWriterInput = assetWriterInput,
           let assetWriter = assetWriter else {
@@ -449,26 +469,41 @@ extension CGImage {
       using: .png, properties: [NSBitmapImageRep.PropertyKey.compressionFactor: compressionFactor])
   }
 
-  func resize(compressionFactor: Float, scale: Float) -> CGImage? {
-    guard
-      let pngData = pngData(compressionFactor: compressionFactor)
-    else {
+  // Application Security Requirement: Efficient direct CGContext resize using boundary validation for dimensions
+  func resizeTo720pHeight() -> CGImage? {
+    let originalWidth = self.width
+    let originalHeight = self.height
+    
+    // Calculate new dimensions maintaining aspect ratio with 720px target height
+    let targetHeight = 720
+    let targetWidth = Int(Double(originalWidth) * (Double(targetHeight) / Double(originalHeight)))
+    
+    // Validate dimensions are reasonable (prevent extreme values)
+    guard targetWidth > 0 && targetWidth <= 16384 && targetHeight > 0 && targetHeight <= 16384 else {
       return nil
     }
-    guard let data = CGImageSourceCreateWithData(pngData as CFData, nil) else {
+    
+    // Create color space and context for direct drawing (much faster than PNG conversion)
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let context = CGContext(
+      data: nil,
+      width: targetWidth,
+      height: targetHeight,
+      bitsPerComponent: 8,
+      bytesPerRow: targetWidth * 4,
+      space: colorSpace,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
       return nil
     }
-    var maxSideLength = width
-    if height > width {
-      maxSideLength = height
-    }
-    maxSideLength = Int(Float(maxSideLength) * scale)
-    let options: [String: Any] = [
-      kCGImageSourceThumbnailMaxPixelSize as String: maxSideLength,
-      kCGImageSourceCreateThumbnailFromImageAlways as String: true,
-      kCGImageSourceCreateThumbnailWithTransform as String: true,
-    ]
-    return CGImageSourceCreateThumbnailAtIndex(data, 0, options as CFDictionary)
+    
+    // High-quality interpolation
+    context.interpolationQuality = .high
+    
+    // Draw the image directly at target size
+    context.draw(self, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+    
+    return context.makeImage()
   }
 }
 
