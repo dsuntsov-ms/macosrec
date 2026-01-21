@@ -236,6 +236,10 @@ class WindowRecorder {
   private var videoHeight: Int = 0
   private var startTime: Date?
   private let processingQueue = DispatchQueue(label: "com.macosrec.processing", qos: .userInitiated)
+  private var isSaving: Bool = false
+  private var frameBuffer: [(pixelBuffer: CVPixelBuffer, presentationTime: CMTime)] = []
+  private let bufferLock = NSLock()
+  private var droppedFrames: Int64 = 0
 
   enum MediaType {
     case mov
@@ -331,6 +335,9 @@ class WindowRecorder {
   }
   
   private func captureAndWriteFrame() {
+    // Skip if we're saving
+    guard !isSaving else { return }
+    
     guard let image = windowImage() else {
       print("Error: No image from window")
       exit(1)
@@ -339,8 +346,9 @@ class WindowRecorder {
     // Capture the actual time when this frame was taken
     let captureTime = Date()
     
+    // Process frame on dedicated queue to avoid blocking the timer
     processingQueue.async { [weak self] in
-      guard let self = self else { return }
+      guard let self = self, !self.isSaving else { return }
       
       guard let resizedImage = image.resizeTo720pHeight() else {
         print("Error: Could not resize frame")
@@ -359,22 +367,58 @@ class WindowRecorder {
         return
       }
       
-      // Skip frame if writer is not ready (avoid blocking/busy-waiting)
-      guard assetWriterInput.isReadyForMoreMediaData else {
-        return
-      }
-      
       // Use actual elapsed time since recording started for accurate playback speed
       let elapsedTime = captureTime.timeIntervalSince(startTime)
       let presentationTime = CMTime(seconds: elapsedTime, preferredTimescale: 600)
       
-      if let pixelBuffer = createPixelBufferFromCGImage(
+      guard let pixelBuffer = createPixelBufferFromCGImage(
         cgImage: resizedImage, width: self.videoWidth, height: self.videoHeight)
-      {
+      else {
+        return
+      }
+      
+      // Try to flush buffer first
+      self.flushFrameBuffer()
+      
+      // Try to write current frame
+      if assetWriterInput.isReadyForMoreMediaData && self.frameBuffer.isEmpty {
         pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: presentationTime)
         self.frameNumber += 1
+      } else {
+        // Buffer this frame if writer is busy
+        self.bufferLock.lock()
+        
+        // Limit buffer size to prevent memory issues (max 120 frames = 2 seconds at 60fps)
+        if self.frameBuffer.count < 120 {
+          self.frameBuffer.append((pixelBuffer, presentationTime))
+        } else {
+          self.droppedFrames += 1
+        }
+        
+        self.bufferLock.unlock()
+        
+        // Try to flush buffer again
+        self.flushFrameBuffer()
       }
     }
+  }
+  
+  private func flushFrameBuffer() {
+    guard let assetWriterInput = assetWriterInput,
+          let pixelBufferAdaptor = pixelBufferAdaptor else {
+      return
+    }
+    
+    bufferLock.lock()
+    
+    // Write as many buffered frames as possible
+    while !frameBuffer.isEmpty && assetWriterInput.isReadyForMoreMediaData {
+      let frame = frameBuffer.removeFirst()
+      pixelBufferAdaptor.append(frame.pixelBuffer, withPresentationTime: frame.presentationTime)
+      frameNumber += 1
+    }
+    
+    bufferLock.unlock()
   }
 
   func abort() {
@@ -426,20 +470,13 @@ class WindowRecorder {
 
   private func saveMov() {
     print("Saving...")
+    
+    // Stop capturing new frames
+    isSaving = true
     timer?.invalidate()
     
-    // Wait for pending frames with 1-second timeout to avoid long delays
-    let group = DispatchGroup()
-    group.enter()
-    processingQueue.async {
-      group.leave()
-    }
-    
-    // Wait max 1 second for pending frames, then proceed
-    let timeout = DispatchTime.now() + .seconds(1)
-    if group.wait(timeout: timeout) == .timedOut {
-      print("Note: Saving with pending frames dropped after 1s timeout")
-    }
+    // Ensure processing queue completes
+    processingQueue.sync { }
     
     guard let assetWriterInput = assetWriterInput,
           let assetWriter = assetWriter else {
@@ -447,9 +484,37 @@ class WindowRecorder {
       exit(1)
     }
     
+    // Flush remaining buffered frames with retries
+    print("Flushing buffered frames...")
+    let maxFlushTime: TimeInterval = 10.0
+    let startFlushTime = Date()
+    
+    while !frameBuffer.isEmpty {
+      flushFrameBuffer()
+      
+      if frameBuffer.isEmpty {
+        break
+      }
+      
+      // Check timeout
+      if Date().timeIntervalSince(startFlushTime) > maxFlushTime {
+        print("Warning: Timeout flushing buffer, \(frameBuffer.count) frames will be lost")
+        break
+      }
+      
+      // Wait a bit for writer to become ready
+      Thread.sleep(forTimeInterval: 0.1)
+    }
+    
     assetWriterInput.markAsFinished()
     
     let outputURL = assetWriter.outputURL
+    let finalFrames = frameNumber
+    
+    if droppedFrames > 0 {
+      print("Warning: \(droppedFrames) frames dropped due to buffer overflow")
+    }
+    print("Wrote \(finalFrames) frames to video")
     
     assetWriter.finishWriting {
       if assetWriter.status == .completed {
